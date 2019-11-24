@@ -21,6 +21,29 @@ type Values = {
   [column: string]: Value;
 }
 
+export const validate = (values: Value[], corMap: CorrelationValidatorMap) => {
+  const mapped = convert(values);
+  Object.keys(corMap).forEach((corColumn: string) => {
+    const corValue: Value = mapped[corColumn];
+    if (!corValue) return;
+
+    const corValidator: CorrelationValidator = corMap[corColumn];
+    const vMap: ValidatorMap | null = corValidator(corValue.value);
+    vMap && Object.keys(vMap).forEach((targetColumn: string) => {
+      const target: Value = mapped[targetColumn];
+      if (!target) return;
+
+      const validators: Validator[] = flatten(vMap[targetColumn]);
+      validators.forEach(v => {
+        const message = v(target.value);
+        if (message) addMessage(target, message);
+      });
+    });
+  });
+
+  return values;
+}
+
 const convert = (valueArray: Value[]): Values => {
   return valueArray.reduce((result, v) => {
     result[v.column] = v;
@@ -28,31 +51,12 @@ const convert = (valueArray: Value[]): Values => {
   }, {} as Values);
 }
 
-export const validate = (values: Value[], corMap: CorrelationValidatorMap) => {
-  const mapped = convert(values);
-  Object.keys(corMap).forEach((corKey) => {
-    const corValue: Value = mapped[corKey];
-    if (!corValue) return;
-    const corValidator: CorrelationValidator = corMap[corKey];
-    const vMap: ValidatorMap | null = corValidator(corValue.value);
-    vMap && Object.keys(vMap).forEach((col: string) => {
-      const validators: Validator[] = ([] as Validator[]).concat(...[vMap[col]]);
-      const target = mapped[col];
-      if (!target) {
-        return;
-      }
-      validators.forEach(v => {
-        const message = v(target.value);
-        if (!message) {
-          return;
-        }
-        target.message = target.message ? [...target.message, message] : [message];
-        target.valid = false;
-      });
-    });
-  });
+const flatten = <T>(elements: T | T[]) => ([] as T[]).concat(...[elements]);
 
-  return values;
+const addMessage = (value: Value, message: string) => {
+  value.message = value.message ? [...value.message, message] : [message];
+  value.valid = false;
+  return value;
 }
 
 const commonKeys = (obj1: {[key: string]: any}, obj2: {[key: string]: any}) => {
